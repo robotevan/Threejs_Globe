@@ -1,11 +1,14 @@
 import * as THREE from 'https://unpkg.com/three/build/three.module.js';
 import {OrbitControls} from 'https://threejs.org/examples/jsm/controls/OrbitControls.js'
 
-const globe_geometry = new THREE.BufferGeometry(); // Hold points makin up the earth
+const globe_geometry = new THREE.Geometry(); // Hold points makin up the earth
+const user_position_geometry = new THREE.Geometry(); // Hold pointer representing user position
+const point_material = new THREE.PointsMaterial({color:0xffffff, size:0.7, opacity:1});
+const user_point_material = new THREE.PointsMaterial({color:0x96234d, size:4, opacity:1});
+
 const globe_radius = 100;
 const array_width = 4098;
 const array_height = 1968;
-let user_coords;
 let  globe_container, canvas, scene, camera, renderer;
 
 function init_scene(){
@@ -18,6 +21,7 @@ function init_scene(){
     scene = new THREE.Scene();
     camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 10000 );
     renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+    
     renderer.setSize(width, height);
     var controls = new OrbitControls( camera, canvas );
 	  controls.minDistance = 100;
@@ -25,6 +29,14 @@ function init_scene(){
     controls.autoRotate = true;
 };
 
+// Function to read points from json
+function read_world_points(){
+  // Points are stored as 2d coordinates in globe_points.js, will use 
+    let points = fetch('./globe_points.json').then(res => res.json()).then(json_data =>{
+      return (json_data.points);
+    });
+    return points;
+  }
 
 // Helper function to convert a cartesian (x,y) point to geographic coordinates (long,lat)
 function xy_to_geo(x, y){
@@ -37,46 +49,27 @@ function xy_to_geo(x, y){
   return {latitude, longitude};
 }
 
-function geo_to_cart(x, y){
-  var { latitude, longitude } = xy_to_geo(x, y);
+function geo_to_cart(latitude, longitude){
+  //var { latitude, longitude } = xy_to_geo(x, y);
   var x = Math.cos(latitude) * Math.cos(longitude) * globe_radius;
   var y = Math.sin(longitude) * globe_radius;
   var z = Math.sin(latitude) * Math.cos(longitude) * globe_radius;
   return {x, y, z};
 }
 
-// Function to read points from json
-function read_world_points(){
-  // Points are stored as 2d coordinates in globe_points.js, will use 
-    let points = fetch('./globe_points.json').then(res => res.json()).then(json_data =>{
-      return (json_data.points);
-    });
-    return points;
-  }
-
-
 function init_points(points){
-  var geometry_positions = [];  // has the form [x,y,z,x,y,z,x,y,z...] as defined at https://threejsfundamentals.org/threejs/lessons/threejs-custom-buffergeometry.html
-  var colors = []; // has the form [r,g,b,r,g,b,r,g,b....] link above
   for (var point of points){
-   const {x, y, z} = geo_to_cart(point.x, point.y); // Get the 3d coordinate after projection
-   //const {x,y,z} = convertFlatCoordsToSphereCoords(point.x, point.y);
-   if (x && y && z){
-     // If point is good, add to geometry buffer
-     geometry_positions.push(x);
-     geometry_positions.push(y);
-     geometry_positions.push(z);
-     colors.push(255);
-     colors.push(255);
-     colors.push(255);
-   }
+    const {latitude, longitude} = xy_to_geo(point.x, point.y)
+    const {x, y, z} = geo_to_cart(latitude, longitude); // Get the 3d coordinate after projection
+    // If succesful add to geometry
+    if (x && y && z){
+      globe_geometry.vertices.push(new THREE.Vector3(x, y, z));
+    }
   }
-  // done setting points, add points and colors to buffergeometry
-  globe_geometry.setAttribute('position', new THREE.Float32BufferAttribute(geometry_positions, 3));
-  globe_geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
-  globe_geometry.computeBoundingSphere();
-  var material = new THREE.PointsMaterial( {vertexColors: THREE.VertexColors, size: 0.7} );
-  var mesh = new THREE.Points( globe_geometry, material );
+  globe_geometry.verticesNeedUpdate = true;
+  globe_geometry.elementsNeedUpdate = true;
+  globe_geometry.computeVertexNormals();
+  var mesh = new THREE.Points( globe_geometry, point_material);
   scene.add(mesh);
 }
 
@@ -85,19 +78,29 @@ var render = function(){
   renderer.render(scene, camera);
 }
 
-function get_location(){
+function plot_user_position(){
+  // if user allows geolocation, set the long/lat of the user
   if (navigator.geolocation){
-    var s = navigator.geolocation.getCurrentPosition(function (position){
-      user_coords = position.coords;
-    });
+    const option = {enableHighAccuracy: true};
+    navigator.geolocation.getCurrentPosition(draw_user_on_globe, null, option);
   }
+}
+
+function draw_user_on_globe(position){
+  var coord = geo_to_cart(position.coords.latitude, position.coords.longitude);
+  user_position_geometry.vertices.push(new THREE.Vector3(coord.x, coord.y, coord.z));
+  user_position_geometry.verticesNeedUpdate = true;
+  user_position_geometry.elementsNeedUpdate = true;
+  user_position_geometry.computeVertexNormals();
+  var mesh = new THREE.Points( user_position_geometry, user_point_material);
+  scene.add(mesh);
 }
 
 
 $(document).ready(function(){
   init_scene();
-  get_location();
   var points = read_world_points();
   points.then(function (result){init_points(result)});
+  plot_user_position(); // will not do anything if user coords not found
   render();
 });
