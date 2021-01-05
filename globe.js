@@ -40,7 +40,6 @@ function read_world_points(){
 
 // Helper function to convert a cartesian (x,y) point to geographic coordinates (long,lat)
 function xy_to_geo(x, y){
-
   var latitude = ((x - (array_width/2)) / (array_width/2))*-180; // latitude, multiply by -180 to flip
   var longitude = ((y - (array_height/2)) / (array_height/2)) * -90; // longitude, multiply by -90 to flip
   // convert to rad
@@ -81,13 +80,15 @@ var render = function(){
 function plot_user_position(){
   // if user allows geolocation, set the long/lat of the user
   if (navigator.geolocation){
-    const option = {enableHighAccuracy: true};
-    navigator.geolocation.getCurrentPosition(draw_user_on_globe, null, option);
+    navigator.geolocation.getCurrentPosition(draw_user_on_globe);
   }
 }
 
 function draw_user_on_globe(position){
-  var coord = geo_to_cart(position.coords.latitude, position.coords.longitude);
+  console.log(position)
+  var latitude = (Math.PI / 180) * (-180 * position.coords.latitude);
+  var longitude = -(Math.PI / 180) * (-90 * position.coords.longitude);
+  var coord = geo_to_cart(latitude, longitude);
   user_position_geometry.vertices.push(new THREE.Vector3(coord.x, coord.y, coord.z));
   user_position_geometry.verticesNeedUpdate = true;
   user_position_geometry.elementsNeedUpdate = true;
